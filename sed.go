@@ -119,13 +119,13 @@ func (sed *SedStatement) Exec(body string) string {
 	}
 }
 
-func (bot *Sed) MessageHandler(evt *maubot.Event) bool {
+func (bot *Sed) MessageHandler(evt *maubot.Event) maubot.EventHandlerResult {
 	sed, err := bot.ParseEvent(evt)
 	if sed == nil {
-		return true
+		return maubot.Continue
 	} else if err != nil {
 		evt.Reply(err.Error())
-		return false
+		return maubot.StopPropagation
 	}
 
 	evt.MarkRead()
@@ -133,12 +133,12 @@ func (bot *Sed) MessageHandler(evt *maubot.Event) bool {
 	origEvt := bot.client.GetEvent(evt.RoomID, evt.Content.RelatesTo.InReplyTo.EventID)
 	if origEvt == nil {
 		evt.Reply("Failed to load event to replace")
-		return true
+		return maubot.Continue
 	}
 
 	replaced := sed.Exec(origEvt.Content.Body)
 	origEvt.Reply(replaced)
-	return false
+	return maubot.StopPropagation
 }
 
 var Plugin = maubot.PluginCreator{
