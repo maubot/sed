@@ -71,7 +71,7 @@ func (bot *Sed) findFullStatement(evt *maubot.Event) *regexp.Regexp {
 	}
 
 	separator := evt.Content.Body[index+len("sed s")]
-	regexFinder, _ := regexp.Compile(fmt.Sprintf(`sed s%[1]s(.*?[^\\])%[1]s(.*?[^\\]?)%[1]s([gi]+)?`, regexp.QuoteMeta(string(separator))))
+	regexFinder, _ := regexp.Compile(fmt.Sprintf(`sed s%[1]s(.*?[^\\]?)%[1]s(.*?[^\\]?)%[1]s([gi]+)?`, regexp.QuoteMeta(string(separator))))
 	return regexFinder
 }
 
@@ -81,7 +81,7 @@ func (bot *Sed) findShortStatement(evt *maubot.Event) *regexp.Regexp {
 	}
 
 	separator := evt.Content.Body[1]
-	regexFinder, _ := regexp.Compile(fmt.Sprintf(`^s%[1]s(.*?[^\\])%[1]s(.*?[^\\]?)%[1]s([gi]+)?$`, regexp.QuoteMeta(string(separator))))
+	regexFinder, _ := regexp.Compile(fmt.Sprintf(`^s%[1]s(.*?[^\\]?)%[1]s(.*?[^\\]?)%[1]s([gi]+)?$`, regexp.QuoteMeta(string(separator))))
 	return regexFinder
 }
 
