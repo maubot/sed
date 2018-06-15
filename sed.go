@@ -26,6 +26,7 @@ import (
 
 type Sed struct {
 	client maubot.MatrixClient
+	prevEventMap map[string]map[string]string
 }
 
 func (bot *Sed) Start() {
@@ -119,7 +120,32 @@ func (sed *SedStatement) Exec(body string) string {
 	}
 }
 
+func (bot *Sed) RegisterPrevEvent(evt *maubot.Event) {
+	roomMap, ok := bot.prevEventMap[evt.RoomID]
+	if !ok {
+		roomMap = make(map[string]string)
+		bot.prevEventMap[evt.RoomID] = roomMap
+	}
+	roomMap[evt.Sender] = evt.ID
+}
+
+func (bot *Sed) GetPrevEvent(roomID, userID string) *maubot.Event {
+	roomMap, ok := bot.prevEventMap[roomID]
+	if !ok {
+		return nil
+	}
+
+	eventID, ok := roomMap[userID]
+	if !ok {
+		return nil
+	}
+
+	return bot.client.GetEvent(roomID, eventID)
+}
+
 func (bot *Sed) MessageHandler(evt *maubot.Event) maubot.EventHandlerResult {
+	defer bot.RegisterPrevEvent(evt)
+
 	sed, err := bot.ParseEvent(evt)
 	if sed == nil {
 		return maubot.Continue
@@ -128,14 +154,17 @@ func (bot *Sed) MessageHandler(evt *maubot.Event) maubot.EventHandlerResult {
 		return maubot.StopPropagation
 	}
 
-	evt.MarkRead()
-
-	origEvt := bot.client.GetEvent(evt.RoomID, evt.Content.RelatesTo.InReplyTo.EventID)
+	var origEvt *maubot.Event
+	if len(evt.Content.RelatesTo.InReplyTo.EventID) > 0 {
+		origEvt = bot.client.GetEvent(evt.RoomID, evt.Content.RelatesTo.InReplyTo.EventID)
+	} else {
+		origEvt = bot.GetPrevEvent(evt.RoomID, evt.Sender)
+	}
 	if origEvt == nil {
-		evt.Reply("Failed to load event to replace")
 		return maubot.Continue
 	}
 
+	evt.MarkRead()
 	replaced := sed.Exec(origEvt.Content.Body)
 	origEvt.Reply(replaced)
 	return maubot.StopPropagation
@@ -145,6 +174,7 @@ var Plugin = maubot.PluginCreator{
 	Create: func(client maubot.MatrixClient) maubot.Plugin {
 		return &Sed{
 			client: client,
+			prevEventMap: make(map[string]map[string]string),
 		}
 	},
 	Name:    "maubot.xyz/sed",
