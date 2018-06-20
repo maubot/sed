@@ -151,7 +151,7 @@ func (bot *Sed) MessageHandler(evt *maubot.Event) maubot.EventHandlerResult {
 		return maubot.Continue
 	} else if err != nil {
 		evt.Reply(err.Error())
-		return maubot.StopPropagation
+		return maubot.StopEventPropagation
 	}
 
 	var origEvt *maubot.Event
@@ -167,7 +167,7 @@ func (bot *Sed) MessageHandler(evt *maubot.Event) maubot.EventHandlerResult {
 	evt.MarkRead()
 	replaced := sed.Exec(origEvt.Content.Body)
 	origEvt.Reply(replaced)
-	return maubot.StopPropagation
+	return maubot.StopEventPropagation
 }
 
 var Plugin = maubot.PluginCreator{
