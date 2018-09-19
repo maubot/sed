@@ -1,9 +1,9 @@
-FROM maubot/plugin-base
+FROM maubot/plugin-base AS builder
 
 COPY . /go/src/maubot.xyz/sed
 RUN go build -buildmode=plugin -o /maubot-plugins/sed.mbp maubot.xyz/sed
 
-FROM scratch
+FROM alpine:latest
+COPY --from=builder /maubot-plugins/sed.mbp /maubot-plugins/sed.mbp
 VOLUME /output
-COPY --from=builder /maubot-plugins/sed.mbp /output/sed.mbp
-# CMD ["cp", "/maubot-plugins/sed.mbp", "/output/sed.mbp"]
+CMD ["cp", "/maubot-plugins/sed.mbp", "/output/sed.mbp"]
