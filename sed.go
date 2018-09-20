@@ -79,8 +79,6 @@ type SedStatement struct {
 	Global  bool
 }
 
-var shortSedRegex = regexp.MustCompile(`^s[#/](.*?[^\\]?)[#/](.*?[^\\]?)(?:[#/]([gi]+)?)?$`)
-
 func (bot *Sed) ParseEvent(evt *maubot.Event) (*SedStatement, error) {
 	sed, err := bot.compilePassiveStatement(evt)
 	if err != nil {
@@ -88,13 +86,6 @@ func (bot *Sed) ParseEvent(evt *maubot.Event) (*SedStatement, error) {
 	} else if sed != nil {
 		return sed, nil
 	}
-
-	/*sed, err = bot.compileStatement(evt, shortSedRegex)
-	if err != nil {
-		return nil, err
-	} else if sed != nil {
-		return sed, nil
-	}*/
 
 	finder := bot.findFullStatement(evt)
 	if finder != nil {
