@@ -52,8 +52,8 @@ func (eq *EventQueue) Add(evt *maubot.Event) {
 }
 
 const (
-	CommandShortSed = "net.maunium.sed.short"
-	CommandLongSed  = "net.maunium.sed.long"
+	CommandShortSed = "xyz.maubot.sed.short"
+	CommandLongSed  = "xyz.maubot.sed.long"
 )
 
 func (bot *Sed) Start() {
@@ -122,21 +122,21 @@ func (bot *Sed) compilePassiveStatement(evt *maubot.Event) (*SedStatement, error
 		}
 	}
 	captured := matchedCommand.Captured
-	if len(captured) == 0 || len(captured[0]) != 6 {
+	if len(captured) == 0 || len(captured[0]) != 5 {
 		return nil, nil
 	}
 	match := captured[0]
 
-	regex, err := regexp.Compile(match[3])
+	regex, err := regexp.Compile(match[2])
 	if err != nil {
 		return nil, fmt.Errorf("failed to compile regex: %v", err)
 	}
 
-	flags := match[5]
+	flags := match[4]
 
 	return &SedStatement{
 		Find:    regex,
-		Replace: match[4],
+		Replace: match[3],
 		Global:  strings.ContainsRune(flags, 'g'),
 	}, nil
 }
