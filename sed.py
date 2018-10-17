@@ -17,8 +17,8 @@ from typing import Tuple, NamedTuple, Pattern, Optional, Dict, Deque
 from collections import deque
 import re
 
-from maubot import Plugin, CommandSpec, PassiveCommand
-from mautrix.types import MessageEvent, UserID, RoomID, EventType
+from maubot import Plugin, CommandSpec, PassiveCommand, MessageEvent
+from mautrix.types import UserID, RoomID, EventType
 
 COMMAND_SHORT_SED = "xyz.maubot.sed.short"
 COMMAND_LONG_SED = "xyz.maubot.sed.long"
