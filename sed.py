@@ -111,8 +111,6 @@ class SedBot(Plugin):
         self._register_prev_event(evt)
 
     async def command_handler(self, evt: MessageEvent) -> None:
-        print(evt.content.body)
-        print(evt.unsigned.passive_command)
         stmt = self._compile_passive_statement(evt)
         if not stmt:
             return
@@ -120,7 +118,6 @@ class SedBot(Plugin):
             orig_evt = await self.client.get_event(evt.room_id, evt.content.get_reply_to())
         else:
             orig_evt = self.prev_user_events.get(evt.room_id, {}).get(evt.sender, None)
-        print(orig_evt)
         await evt.mark_read()
 
         ok = orig_evt and await self._try_replace_event(stmt, orig_evt)
