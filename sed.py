@@ -53,7 +53,13 @@ class SedBot(Plugin):
         self.client.add_command_handler(COMMAND_LONG_SED, self.command_handler)
         self.client.add_event_handler(self.message_handler, EventType.ROOM_MESSAGE)
 
-    def _parse_flags(self, flags: str) -> Tuple[re.RegexFlag, bool]:
+    async def stop(self) -> None:
+        self.client.remove_command_handler(COMMAND_SHORT_SED, self.command_handler)
+        self.client.remove_command_handler(COMMAND_LONG_SED, self.command_handler)
+        self.client.remove_event_handler(self.message_handler, EventType.ROOM_MESSAGE)
+
+    @staticmethod
+    def _parse_flags(flags: str) -> Tuple[re.RegexFlag, bool]:
         re_flags = {
             "i": re.IGNORECASE,
             "m": re.MULTILINE,
