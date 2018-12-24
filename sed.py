@@ -17,15 +17,14 @@ from typing import Tuple, NamedTuple, Pattern, Optional, Dict, Deque
 from collections import deque
 import re
 
-from maubot import Plugin, CommandSpec, PassiveCommand, MessageEvent
 from mautrix.types import UserID, RoomID, EventType
-
-COMMAND_SHORT_SED = "xyz.maubot.sed.short"
-COMMAND_LONG_SED = "xyz.maubot.sed.long"
+from maubot import Plugin, MessageEvent
+from maubot.handlers import event, command
 
 EVENT_CACHE_LENGTH = 10
 
 SedStatement = NamedTuple("SedStatement", find=Pattern, replace=str, is_global=bool)
+SedMatch = Tuple[str, str, str, str, str]
 
 
 class SedBot(Plugin):
@@ -36,27 +35,6 @@ class SedBot(Plugin):
         super().__init__(*args, **kwargs)
         self.prev_user_events = {}
         self.prev_room_events = {}
-
-    async def start(self) -> None:
-        self.set_command_spec(CommandSpec(
-            passive_commands=[PassiveCommand(
-                name=COMMAND_SHORT_SED,
-                matches=r"^s([#/])(.*?[^\\]?)[#/](.*?[^\\]?)(?:[#/]([gi]+)?)?$",
-                match_against="body",
-            ), PassiveCommand(
-                name=COMMAND_LONG_SED,
-                matches=r"sed s(.)(.*?[^\\]?)\1(.*?[^\\]?)\1([gi]+)?",
-                match_against="body",
-            )],
-        ))
-        self.client.add_command_handler(COMMAND_SHORT_SED, self.command_handler)
-        self.client.add_command_handler(COMMAND_LONG_SED, self.command_handler)
-        self.client.add_event_handler(self.message_handler, EventType.ROOM_MESSAGE)
-
-    async def stop(self) -> None:
-        self.client.remove_command_handler(COMMAND_SHORT_SED, self.command_handler)
-        self.client.remove_command_handler(COMMAND_LONG_SED, self.command_handler)
-        self.client.remove_event_handler(self.message_handler, EventType.ROOM_MESSAGE)
 
     @staticmethod
     def _parse_flags(flags: str) -> Tuple[re.RegexFlag, bool]:
@@ -76,23 +54,15 @@ class SedBot(Plugin):
                     is_global = True
         return flag, is_global
 
-    def _compile_passive_statement(self, evt: MessageEvent) -> Optional[SedStatement]:
-        if not evt.unsigned.passive_command:
+    def _compile_passive_statement(self, match: SedMatch) -> Optional[SedStatement]:
+        if not match or len(match) != 5:
             return None
-        command = (evt.unsigned.passive_command.get(COMMAND_SHORT_SED, None)
-                   or evt.unsigned.passive_command.get(COMMAND_LONG_SED, None))
-        if not command:
-            return None
-
-        if len(command.captured) == 0 or len(command.captured[0]) != 5:
-            return None
-
-        match = command.captured[0]
 
         flags, is_global = self._parse_flags(match[4] or "")
         return SedStatement(re.compile(match[2], flags), match[3], is_global)
 
-    def _exec(self, stmt: SedStatement, body: str) -> str:
+    @staticmethod
+    def _exec(stmt: SedStatement, body: str) -> str:
         return stmt.find.sub(stmt.replace, body, count=0 if stmt.is_global else 1)
 
     def _register_prev_event(self, evt: MessageEvent) -> None:
@@ -113,11 +83,14 @@ class SedBot(Plugin):
         await orig_evt.reply(replaced)
         return True
 
+    @event.on(EventType.ROOM_MESSAGE)
     async def message_handler(self, evt: MessageEvent) -> None:
         self._register_prev_event(evt)
 
-    async def command_handler(self, evt: MessageEvent) -> None:
-        stmt = self._compile_passive_statement(evt)
+    @command.passive(r"sed s(.)(.*?[^\\]?)\1(.*?[^\\]?)\1([gi]+)?")
+    @command.passive(r"^s([#/])(.*?[^\\]?)\1(.*?[^\\]?)(?:\1([gi]+)?)?$")
+    async def command_handler(self, evt: MessageEvent, match: SedMatch) -> None:
+        stmt = self._compile_passive_statement(match)
         if not stmt:
             return
         if evt.content.get_reply_to():
