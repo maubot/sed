@@ -15,6 +15,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 from typing import Tuple, NamedTuple, Pattern, Optional, Dict, Deque
 from collections import deque
+import string
 import re
 
 from mautrix.types import UserID, RoomID, EventType
@@ -37,29 +38,71 @@ class SedBot(Plugin):
         self.prev_room_events = {}
 
     @staticmethod
-    def _parse_flags(flags: str) -> Tuple[re.RegexFlag, bool]:
+    def _read_until_separator(raw_statement: str, separator: str, require: bool = True
+                              ) -> Optional[Tuple[str, str]]:
+        value = ""
+        while True:
+            try:
+                sep_index = raw_statement.index(separator)
+            except ValueError:
+                if require:
+                    raise
+                return raw_statement, value
+            if sep_index == 0:
+                return value, raw_statement[1:]
+            elif raw_statement[sep_index - 1] == "\\":
+                value += raw_statement[:sep_index - 1] + separator
+                raw_statement = raw_statement[sep_index + 1:]
+            else:
+                value += raw_statement[:sep_index]
+                raw_statement = raw_statement[sep_index + 1:]
+                return value, raw_statement
+
+    @staticmethod
+    def _parse_flags(raw_statement: str, allow_unknown_flags: bool = False
+                     ) -> Tuple[re.RegexFlag, bool]:
         re_flags = {
             "i": re.IGNORECASE,
             "m": re.MULTILINE,
             "s": re.DOTALL,
             "t": re.TEMPLATE,
         }
-        flag = re.UNICODE
+        flags = re.UNICODE
         is_global = False
-        for char in flags.lower():
+        for char in raw_statement.lower():
             try:
-                flag += re_flags[char]
+                flags += re_flags[char]
             except KeyError:
                 if char == "g":
                     is_global = True
-        return flag, is_global
+                elif not allow_unknown_flags:
+                    raise ValueError(f"Unknown flag {char}")
+                elif char not in string.ascii_lowercase:
+                    break
+        return flags, is_global
 
-    def _compile_passive_statement(self, match: SedMatch) -> Optional[SedStatement]:
-        if not match or len(match) != 5:
+    @classmethod
+    def _compile_passive_statement(cls, match: SedMatch) -> Optional[SedStatement]:
+        if not match or len(match) != 2:
             return None
 
-        flags, is_global = self._parse_flags(match[4] or "")
-        return SedStatement(re.compile(match[2], flags), match[3], is_global)
+        full_size = match[0] != match[1]
+
+        raw_statement = match[1]
+        if raw_statement[0] != "s":
+            return None
+
+        try:
+            separator, raw_statement = raw_statement[1], raw_statement[2:]
+            if separator not in ("/", "#") and not full_size:
+                return None
+            regex, raw_statement = cls._read_until_separator(raw_statement, separator)
+            replacement, raw_statement = cls._read_until_separator(raw_statement, separator,
+                                                                   require=full_size)
+            flags, is_global = cls._parse_flags(raw_statement, full_size)
+        except ValueError:
+            return None
+        return SedStatement(re.compile(regex, flags), replacement, is_global)
 
     @staticmethod
     def _exec(stmt: SedStatement, body: str) -> str:
@@ -87,8 +130,8 @@ class SedBot(Plugin):
     async def message_handler(self, evt: MessageEvent) -> None:
         self._register_prev_event(evt)
 
-    @command.passive(r"sed s(.)(.*?[^\\]?)\1(.*?[^\\]?)\1([gi]+)?")
-    @command.passive(r"^s([#/])(.*?[^\\]?)\1(.*?[^\\]?)(?:\1([gi]+)?)?$")
+    @command.passive(r"sed (s.+)")
+    @command.passive(r"^(s[#/].+[#/].+)$")
     async def command_handler(self, evt: MessageEvent, match: SedMatch) -> None:
         stmt = self._compile_passive_statement(match)
         if not stmt:
