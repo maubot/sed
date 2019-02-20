@@ -130,7 +130,7 @@ class SedBot(Plugin):
     async def message_handler(self, evt: MessageEvent) -> None:
         self._register_prev_event(evt)
 
-    @command.passive(r"sed (s.+)")
+    @command.passive(r"(?:^|[^a-zA-Z0-9])sed (s.+)")
     @command.passive(r"^(s[#/].+[#/].+)$")
     async def command_handler(self, evt: MessageEvent, match: SedMatch) -> None:
         stmt = self._compile_passive_statement(match)
