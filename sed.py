@@ -15,6 +15,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 from typing import Tuple, NamedTuple, Pattern, Optional, Dict, Deque
 from collections import deque
+from difflib import SequenceMatcher
 import string
 import re
 
@@ -119,11 +120,30 @@ class SedBot(Plugin):
 
         self.prev_user_events.setdefault(evt.room_id, {})[evt.sender] = evt
 
+    @staticmethod
+    def op_to_str(tag: str, old_text: str, new_text: str) -> str:
+        if tag == "equal":
+            return new_text
+        # TODO add this as an optional behavior?
+        # elif tag == "replace":
+        #    return f"<del>{old_text}</del><u>{new_text}</u>"
+        elif tag == "insert" or tag == "replace":
+            return f"<u>{new_text}</u>"
+        elif tag == "delete":
+            return f"<del>{old_text}</del>"
+
+    @classmethod
+    def highlight_edits(cls, new_text: str, old_text: str) -> str:
+        matcher = SequenceMatcher(a=old_text, b=new_text)
+        return "".join(cls.op_to_str(tag, old_text[old_start:old_end], new_text[new_start:new_end])
+                       for tag, old_start, old_end, new_start, new_end in matcher.get_opcodes())
+
     async def _try_replace_event(self, stmt: SedStatement, orig_evt: MessageEvent) -> bool:
         replaced = self._exec(stmt, orig_evt.content.body)
         if replaced == orig_evt.content.body:
             return False
-        await orig_evt.reply(replaced)
+        await orig_evt.reply(self.highlight_edits(replaced, orig_evt.content.body),
+                             html_in_markdown=True)
         return True
 
     @event.on(EventType.ROOM_MESSAGE)
