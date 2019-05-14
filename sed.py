@@ -148,10 +148,10 @@ class SedBot(Plugin):
         if replaced == orig_evt.content.body:
             return False
         content = TextMessageEventContent(
-            msgtype=MessageType.TEXT, body=replaced, format=Format.HTML,
+            msgtype=MessageType.NOTICE, body=replaced, format=Format.HTML,
             formatted_body=self.highlight_edits(replaced, orig_evt.content.body))
         if orig_evt.content.msgtype == MessageType.EMOTE:
-            displayname =await self._get_displayname(orig_evt.room_id, orig_evt.sender)
+            displayname = await self._get_displayname(orig_evt.room_id, orig_evt.sender)
             content.body = f"* {displayname} {content.body}"
             content.formatted_body = f"* {escape(displayname)} {content.formatted_body}"
         await orig_evt.reply(content)
