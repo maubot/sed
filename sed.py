@@ -16,10 +16,11 @@
 from typing import Tuple, NamedTuple, Pattern, Optional, Dict, Deque
 from collections import deque
 from difflib import SequenceMatcher
+from html import escape
 import string
 import re
 
-from mautrix.types import UserID, RoomID, EventType
+from mautrix.types import UserID, RoomID, EventType, MessageType, TextMessageEventContent, Format
 from maubot import Plugin, MessageEvent
 from maubot.handlers import event, command
 
@@ -138,12 +139,22 @@ class SedBot(Plugin):
         return "".join(cls.op_to_str(tag, old_text[old_start:old_end], new_text[new_start:new_end])
                        for tag, old_start, old_end, new_start, new_end in matcher.get_opcodes())
 
+    async def _get_displayname(self, room_id: RoomID, user_id: UserID) -> str:
+        event = await self.client.get_state_event(room_id, EventType.ROOM_MEMBER, user_id)
+        return event.displayname
+
     async def _try_replace_event(self, stmt: SedStatement, orig_evt: MessageEvent) -> bool:
         replaced = self._exec(stmt, orig_evt.content.body)
         if replaced == orig_evt.content.body:
             return False
-        await orig_evt.reply(self.highlight_edits(replaced, orig_evt.content.body),
-                             html_in_markdown=True)
+        content = TextMessageEventContent(
+            msgtype=MessageType.TEXT, body=replaced, format=Format.HTML,
+            formatted_body=self.highlight_edits(replaced, orig_evt.content.body))
+        if orig_evt.content.msgtype == MessageType.EMOTE:
+            displayname =await self._get_displayname(orig_evt.room_id, orig_evt.sender)
+            content.body = f"* {displayname} {content.body}"
+            content.formatted_body = f"* {escape(displayname)} {content.formatted_body}"
+        await orig_evt.reply(content)
         return True
 
     @event.on(EventType.ROOM_MESSAGE)
