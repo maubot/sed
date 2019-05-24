@@ -125,13 +125,10 @@ class SedBot(Plugin):
     def op_to_str(tag: str, old_text: str, new_text: str) -> str:
         if tag == "equal":
             return new_text
-        # TODO add this as an optional behavior?
-        # elif tag == "replace":
-        #    return f"<del>{old_text}</del><u>{new_text}</u>"
         elif tag == "insert" or tag == "replace":
             return f"<u>{new_text}</u>"
         elif tag == "delete":
-            return f"<del>{old_text}</del>"
+            return ""
 
     @classmethod
     def highlight_edits(cls, new_text: str, old_text: str) -> str:
