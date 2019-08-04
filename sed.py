@@ -20,24 +20,29 @@ from html import escape
 import string
 import re
 
-from mautrix.types import UserID, RoomID, EventType, MessageType, TextMessageEventContent, Format
+from mautrix.types import (UserID, RoomID, EventID, EventType, MessageType, TextMessageEventContent,
+                           Format, RedactionEvent, RelatesTo, RelationType)
 from maubot import Plugin, MessageEvent
 from maubot.handlers import event, command
 
 EVENT_CACHE_LENGTH = 10
 
 SedStatement = NamedTuple("SedStatement", find=Pattern, replace=str, is_global=bool)
+HistoricalSed = NamedTuple("HistoricalSed", seds_event=EventID, output_event=EventID)
+
 SedMatch = Tuple[str, str, str, str, str]
 
 
 class SedBot(Plugin):
     prev_user_events: Dict[RoomID, Dict[UserID, MessageEvent]]
     prev_room_events: Dict[RoomID, Deque[MessageEvent]]
+    history: Dict[EventID, HistoricalSed]
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.prev_user_events = {}
         self.prev_room_events = {}
+        self.history = {}
 
     @staticmethod
     def _read_until_separator(raw_statement: str, separator: str, require: bool = True
@@ -140,7 +145,8 @@ class SedBot(Plugin):
         event = await self.client.get_state_event(room_id, EventType.ROOM_MEMBER, user_id)
         return event.displayname
 
-    async def _try_replace_event(self, stmt: SedStatement, orig_evt: MessageEvent) -> bool:
+    async def _try_replace_event(self, event_id: EventID, stmt: SedStatement, orig_evt: MessageEvent
+                                 ) -> bool:
         replaced = self._exec(stmt, orig_evt.content.body)
         if replaced == orig_evt.content.body:
             return False
@@ -151,12 +157,22 @@ class SedBot(Plugin):
             displayname = await self._get_displayname(orig_evt.room_id, orig_evt.sender)
             content.body = f"* {displayname} {content.body}"
             content.formatted_body = f"* {escape(displayname)} {content.formatted_body}"
-        await orig_evt.reply(content)
+        output_event = await orig_evt.reply(content)
+        self.history[event_id] = HistoricalSed(output_event=output_event,
+                                               seds_event=orig_evt.event_id)
         return True
 
     @event.on(EventType.ROOM_MESSAGE)
     async def message_handler(self, evt: MessageEvent) -> None:
         self._register_prev_event(evt)
+
+    @event.on(EventType.ROOM_REDACTION)
+    async def redaction_handler(self, evt: RedactionEvent) -> None:
+        try:
+            sed = self.history[evt.redacts]
+        except KeyError:
+            return
+        await self.client.redact(evt.room_id, sed.output_event)
 
     @command.passive(r"(?:^|[^a-zA-Z0-9])sed (s.+)")
     @command.passive(r"^(s[#/].+[#/].+)$")
@@ -164,16 +180,41 @@ class SedBot(Plugin):
         stmt = self._compile_passive_statement(match)
         if not stmt:
             return
+        try:
+            original_sed = self.history[evt.content.get_edit()]
+            await self.edit_handler(evt, stmt, original_sed)
+            return
+        except KeyError:
+            pass
         if evt.content.get_reply_to():
             orig_evt = await self.client.get_event(evt.room_id, evt.content.get_reply_to())
         else:
             orig_evt = self.prev_user_events.get(evt.room_id, {}).get(evt.sender, None)
         await evt.mark_read()
 
-        ok = orig_evt and await self._try_replace_event(stmt, orig_evt)
-        if ok:
+        if orig_evt and await self._try_replace_event(evt.event_id, stmt, orig_evt):
             return
 
         for recent_event in self.prev_room_events.get(evt.room_id, []):
-            if await self._try_replace_event(stmt, recent_event):
+            if await self._try_replace_event(evt.event_id, stmt, recent_event):
                 break
+
+    async def edit_handler(self, evt: MessageEvent, stmt: SedStatement, original_sed: HistoricalSed
+                           ) -> None:
+        orig_evt = await self.client.get_event(evt.room_id, original_sed.seds_event)
+        replaced = self._exec(stmt, orig_evt.content.body)
+        content = TextMessageEventContent(
+            msgtype=MessageType.NOTICE, body=replaced, format=Format.HTML,
+            formatted_body=self.highlight_edits(replaced, orig_evt.content.body),
+            relates_to=RelatesTo(rel_type=RelationType.REPLACE, event_id=original_sed.output_event))
+
+        # TODO these three lines shouldn't be necessary when maubot gets proper edit handling
+        ser = content.serialize()
+        del ser["m.relates_to"]
+        content["m.new_content"] = ser
+
+        if orig_evt.content.msgtype == MessageType.EMOTE:
+            displayname = await self._get_displayname(orig_evt.room_id, orig_evt.sender)
+            content.body = f"* {displayname} {content.body}"
+            content.formatted_body = f"* {escape(displayname)} {content.formatted_body}"
+        await self.client.send_message(evt.room_id, content)
