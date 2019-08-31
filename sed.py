@@ -208,11 +208,6 @@ class SedBot(Plugin):
             formatted_body=self.highlight_edits(replaced, orig_evt.content.body),
             relates_to=RelatesTo(rel_type=RelationType.REPLACE, event_id=original_sed.output_event))
 
-        # TODO these three lines shouldn't be necessary when maubot gets proper edit handling
-        ser = content.serialize()
-        del ser["m.relates_to"]
-        content["m.new_content"] = ser
-
         if orig_evt.content.msgtype == MessageType.EMOTE:
             displayname = await self._get_displayname(orig_evt.room_id, orig_evt.sender)
             content.body = f"* {displayname} {content.body}"
