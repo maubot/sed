@@ -27,7 +27,7 @@ from maubot.handlers import event, command
 
 EVENT_CACHE_LENGTH = 10
 
-SedStatement = NamedTuple("SedStatement", find=Pattern, replace=str, is_global=bool)
+SedStatement = NamedTuple("SedStatement", find=Pattern, replace=str, is_global=bool, highlight_edits=bool)
 HistoricalSed = NamedTuple("HistoricalSed", seds_event=EventID, output_event=EventID)
 
 SedMatch = Tuple[str, str, str, str, str]
@@ -67,8 +67,9 @@ class SedBot(Plugin):
 
     @staticmethod
     def _parse_flags(raw_statement: str, allow_unknown_flags: bool = False
-                     ) -> Tuple[re.RegexFlag, bool]:
+                     ) -> Tuple[re.RegexFlag, bool, bool]:
         re_flags = {
+            "a": re.ASCII,
             "i": re.IGNORECASE,
             "m": re.MULTILINE,
             "s": re.DOTALL,
@@ -76,17 +77,20 @@ class SedBot(Plugin):
         }
         flags = re.UNICODE
         is_global = False
+        no_underline = False
         for char in raw_statement.lower():
             try:
                 flags += re_flags[char]
             except KeyError:
                 if char == "g":
                     is_global = True
+                elif char == "u":
+                    no_underline = True
                 elif not allow_unknown_flags:
                     raise ValueError(f"Unknown flag {char}")
                 elif char not in string.ascii_lowercase:
                     break
-        return flags, is_global
+        return flags, is_global, no_underline
 
     @classmethod
     def _compile_passive_statement(cls, match: SedMatch) -> Optional[SedStatement]:
@@ -106,10 +110,11 @@ class SedBot(Plugin):
             regex, raw_statement = cls._read_until_separator(raw_statement, separator)
             replacement, raw_statement = cls._read_until_separator(raw_statement, separator,
                                                                    require=full_size)
-            flags, is_global = cls._parse_flags(raw_statement, full_size)
+            flags, is_global, no_underline = cls._parse_flags(raw_statement, full_size)
         except ValueError:
             return None
-        return SedStatement(re.compile(regex, flags), replacement, is_global)
+        return SedStatement(re.compile(regex, flags), replacement, is_global=is_global,
+                            highlight_edits=not no_underline)
 
     @staticmethod
     def _exec(stmt: SedStatement, body: str) -> str:
@@ -136,7 +141,9 @@ class SedBot(Plugin):
             return ""
 
     @classmethod
-    def highlight_edits(cls, new_text: str, old_text: str) -> str:
+    def highlight_edits(cls, new_text: str, old_text: str, highlight: bool) -> str:
+        if not highlight:
+            return escape(new_text)
         matcher = SequenceMatcher(a=old_text, b=new_text)
         return "".join(cls.op_to_str(tag, old_text[old_start:old_end], new_text[new_start:new_end])
                        for tag, old_start, old_end, new_start, new_end in matcher.get_opcodes())
@@ -152,7 +159,8 @@ class SedBot(Plugin):
             return False
         content = TextMessageEventContent(
             msgtype=MessageType.NOTICE, body=replaced, format=Format.HTML,
-            formatted_body=self.highlight_edits(replaced, orig_evt.content.body))
+            formatted_body=self.highlight_edits(replaced, orig_evt.content.body,
+                                                stmt.highlight_edits))
         if orig_evt.content.msgtype == MessageType.EMOTE:
             displayname = await self._get_displayname(orig_evt.room_id, orig_evt.sender)
             content.body = f"* {displayname} {content.body}"
@@ -205,7 +213,8 @@ class SedBot(Plugin):
         replaced = self._exec(stmt, orig_evt.content.body)
         content = TextMessageEventContent(
             msgtype=MessageType.NOTICE, body=replaced, format=Format.HTML,
-            formatted_body=self.highlight_edits(replaced, orig_evt.content.body),
+            formatted_body=self.highlight_edits(replaced, orig_evt.content.body,
+                                                stmt.highlight_edits),
             relates_to=RelatesTo(rel_type=RelationType.REPLACE, event_id=original_sed.output_event))
 
         if orig_evt.content.msgtype == MessageType.EMOTE:
