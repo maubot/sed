@@ -1,5 +1,5 @@
 # sed - A maubot plugin to do sed-like replacements.
-# Copyright (C) 2019 Tulir Asokan
+# Copyright (C) 2020 Tulir Asokan
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as published by
@@ -14,7 +14,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 from typing import Tuple, NamedTuple, Pattern, Optional, Dict, Deque
-from collections import deque
+from collections import deque, defaultdict
 from difflib import SequenceMatcher
 from html import escape
 import string
@@ -40,8 +40,8 @@ class SedBot(Plugin):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.prev_user_events = {}
-        self.prev_room_events = {}
+        self.prev_user_events = defaultdict(lambda: {})
+        self.prev_room_events = defaultdict(lambda: deque(maxlen=EVENT_CACHE_LENGTH))
         self.history = {}
 
     @staticmethod
@@ -90,7 +90,7 @@ class SedBot(Plugin):
                     raise ValueError(f"Unknown flag {char}")
                 elif char not in string.ascii_lowercase:
                     break
-        return flags, is_global, no_underline
+        return re.RegexFlag(flags), is_global, no_underline
 
     @classmethod
     def _compile_passive_statement(cls, match: SedMatch) -> Optional[SedStatement]:
@@ -119,17 +119,6 @@ class SedBot(Plugin):
     @staticmethod
     def _exec(stmt: SedStatement, body: str) -> str:
         return stmt.find.sub(stmt.replace, body, count=0 if stmt.is_global else 1)
-
-    def _register_prev_event(self, evt: MessageEvent) -> None:
-        try:
-            events = self.prev_room_events[evt.room_id]
-        except KeyError:
-            self.prev_room_events[evt.room_id] = events = deque()
-        events.appendleft(evt)
-        if len(events) > EVENT_CACHE_LENGTH:
-            events.pop()
-
-        self.prev_user_events.setdefault(evt.room_id, {})[evt.sender] = evt
 
     @staticmethod
     def op_to_str(tag: str, old_text: str, new_text: str) -> str:
@@ -170,10 +159,6 @@ class SedBot(Plugin):
                                                seds_event=orig_evt.event_id)
         return True
 
-    @event.on(EventType.ROOM_MESSAGE)
-    async def message_handler(self, evt: MessageEvent) -> None:
-        self._register_prev_event(evt)
-
     @event.on(EventType.ROOM_REDACTION)
     async def redaction_handler(self, evt: RedactionEvent) -> None:
         try:
@@ -182,6 +167,13 @@ class SedBot(Plugin):
             return
         await self.client.redact(evt.room_id, sed.output_event)
 
+    @event.on(EventType.ROOM_MESSAGE)
+    async def message_handler(self, evt: MessageEvent) -> None:
+        await self.command_handler(evt)
+        self.prev_room_events[evt.room_id].appendleft(evt)
+        self.prev_user_events[evt.room_id][evt.sender] = evt
+
+    @event.off
     @command.passive(r"(?:^|[^a-zA-Z0-9])sed (s.+)")
     @command.passive(r"^(s[#/].+[#/].+)$")
     async def command_handler(self, evt: MessageEvent, match: SedMatch) -> None:
