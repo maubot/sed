@@ -18,6 +18,7 @@ from collections import deque, defaultdict
 from difflib import SequenceMatcher
 from html import escape
 import string
+import time
 import re
 
 from mautrix.types import (UserID, RoomID, EventID, EventType, MessageType, TextMessageEventContent,
@@ -27,7 +28,8 @@ from maubot.handlers import event, command
 
 EVENT_CACHE_LENGTH = 10
 
-SedStatement = NamedTuple("SedStatement", find=Pattern, replace=str, is_global=bool, highlight_edits=bool)
+SedStatement = NamedTuple("SedStatement", find=Pattern, replace=str, is_global=bool,
+                          highlight_edits=bool)
 HistoricalSed = NamedTuple("HistoricalSed", seds_event=EventID, output_event=EventID)
 
 SedMatch = Tuple[str, str, str, str, str]
@@ -173,6 +175,10 @@ class SedBot(Plugin):
         self.prev_room_events[evt.room_id].appendleft(evt)
         self.prev_user_events[evt.room_id][evt.sender] = evt
 
+    @staticmethod
+    def _is_recent(evt: MessageEvent) -> bool:
+        return evt.timestamp + 5 * 60 * 1000 > time.time() * 1000
+
     @event.off
     @command.passive(r"(?:^|[^a-zA-Z0-9])sed (s.+)")
     @command.passive(r"^(s[#/].+[#/].+)$")
@@ -186,16 +192,19 @@ class SedBot(Plugin):
             return
         except KeyError:
             pass
-        if evt.content.get_reply_to():
-            orig_evt = await self.client.get_event(evt.room_id, evt.content.get_reply_to())
-        else:
-            orig_evt = self.prev_user_events.get(evt.room_id, {}).get(evt.sender, None)
         await evt.mark_read()
-
-        if orig_evt and await self._try_replace_event(evt.event_id, stmt, orig_evt):
+        if evt.content.get_reply_to():
+            reply_evt = await self.client.get_event(evt.room_id, evt.content.get_reply_to())
+            await self._try_replace_event(evt.event_id, stmt, reply_evt)
             return
 
-        for recent_event in self.prev_room_events.get(evt.room_id, []):
+        room_prev_evts = self.prev_room_events.get(evt.room_id, [])
+        own_prev_evt = self.prev_user_events.get(evt.room_id, {}).get(evt.sender, None)
+        if ((own_prev_evt in room_prev_evts or self._is_recent(own_prev_evt))
+                and await self._try_replace_event(evt.event_id, stmt, own_prev_evt)):
+            return
+
+        for recent_event in room_prev_evts:
             if await self._try_replace_event(evt.event_id, stmt, recent_event):
                 break
 
