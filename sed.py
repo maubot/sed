@@ -163,6 +163,8 @@ class SedBot(Plugin):
 
     async def _try_replace_event(self, event_id: EventID, stmt: SedStatement, orig_evt: MessageEvent
                                  ) -> bool:
+        if not orig_evt:
+            return False
         replaced = self._exec(stmt, orig_evt.content.body)
         if replaced == orig_evt.content.body:
             return False
@@ -195,7 +197,7 @@ class SedBot(Plugin):
 
     @staticmethod
     def _is_recent(evt: MessageEvent) -> bool:
-        return evt.timestamp + 5 * 60 * 1000 > time.time() * 1000
+        return evt and evt.timestamp + 5 * 60 * 1000 > time.time() * 1000
 
     @event.off
     @command.passive(r"(?:^|[^a-zA-Z0-9])sed (s.+)")
