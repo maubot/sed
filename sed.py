@@ -92,7 +92,6 @@ class SedBot(Plugin):
             "i": re.IGNORECASE,
             "m": re.MULTILINE,
             "s": re.DOTALL,
-            "t": re.TEMPLATE,
         }
         flags = re.UNICODE
         is_global = False
