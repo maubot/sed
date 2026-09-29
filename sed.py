@@ -206,6 +206,9 @@ class SedBot(Plugin):
             await self._command_handler(evt, match)
         except TimeoutError:
             await evt.reply("3:<")
+        except Exception:
+            self.log.exception(f"Failed to handle {evt.event_id} from {evt.sender} in {evt.room_id}")
+            await evt.react("❌️")
 
     async def _command_handler(self, evt: MessageEvent, match: SedMatch):
         with timeout():
@@ -221,7 +224,11 @@ class SedBot(Plugin):
         await evt.mark_read()
         if evt.content.get_reply_to():
             reply_evt = await self.client.get_event(evt.room_id, evt.content.get_reply_to())
-            await self._try_replace_event(evt.event_id, stmt, reply_evt)
+            if reply_evt:
+                await self._try_replace_event(evt.event_id, stmt, reply_evt)
+            else:
+                self.log.exception(f"Event {evt.content.get_reply_to()} not found in {evt.room_id} to handle sed from {evt.sender}")
+                await evt.react("❌️")
             return
 
         room_prev_evts = self.prev_room_events.get(evt.room_id, [])
